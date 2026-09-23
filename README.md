@@ -1,8 +1,40 @@
-# 🎓 UniAssist — AI College Support Chatbot
 
-A full-stack AI chatbot that answers college-specific questions accurately using **Retrieval-Augmented Generation (RAG)**.
 
-Unlike generic AI assistants that rely only on pretrained knowledge, UniAssist first retrieves relevant information from a curated college knowledge base, then produces context-aware, source-backed answers through **Google Gemini**.
+# 🎓 UniAssist
+### AI-Powered College Support Chatbot
+
+A full-stack RAG chatbot that answers college-specific questions accurately — grounded in your institution's own knowledge base, not the model's guesses.
+
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev)
+[![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)](https://expressjs.com)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/atlas)
+[![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-4285F4?logo=googlegemini&logoColor=white)](https://ai.google.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
+
+
+
+---
+
+## Table of Contents
+
+- [Why RAG?](#why-rag)
+- [Features](#features)
+- [How It Works](#how-it-works--rag-pipeline)
+- [Tech Stack](#tech-stack)
+- [API Reference](#api-reference)
+- [Database Schema](#database-schema)
+- [Authentication Flow](#authentication-flow)
+- [Semantic Search](#semantic-search-not-keyword-search)
+- [Folder Structure](#folder-structure)
+- [Installation](#installation)
+- [Deployment](#deployment)
+- [Performance Notes](#performance-notes)
+- [Example Questions](#example-questions)
+- [Roadmap](#roadmap)
+- [Why This Project Stands Out](#why-this-project-stands-out)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ---
 
@@ -15,54 +47,21 @@ Generic chatbots often hallucinate when asked institution-specific questions —
 - Grounding every response in verified knowledge-base content
 - **Citing the source** used for each answer
 
-Ask things like:
 > "When does the Fall semester start?"
 > "What's the late payment fee?"
 > "Do I have to live on campus as a freshman?"
 
 ---
 
-## Preview
-
-| Login | Chat |
-|---|---|
-| ![Login screen](./docs/images/login-preview.svg) | ![Chat interface](./docs/images/chat-ui-preview.svg) |
-
-> These are UI mockups generated for this README, not live screenshots. Once you run the app, swap them out for real screenshots at `docs/images/login-preview.png` and `docs/images/chat-ui-preview.png`.
-
----
-
 ## Features
 
-**AI-Powered Chat**
-- Google Gemini integration
-- Context-aware, multi-turn conversations
-- Persistent chat history per user
-- Source-backed responses with citations
-
-**RAG Pipeline**
-- Local embeddings (no per-query embedding API cost)
-- Semantic search over the knowledge base
-- Cosine-similarity retrieval with a relevance threshold
-- Falls back to "I don't have that information" instead of guessing
-
-**Authentication**
-- JWT-based auth
-- bcrypt password hashing
-- Protected routes via middleware
-- Role-based access (`student` / `admin`)
-
-**Knowledge Management**
-- Admin CRUD for knowledge base entries
-- Automatic embedding generation on insert
-- MongoDB storage
-- Bulk ingestion script with a sample dataset included
-
-**Security**
-- Environment-variable-based secrets
-- CORS restricted to a configured client origin
-- JWT verification on every protected route
-- Passwords never stored in plaintext
+| | |
+|---|---|
+| 🤖 **AI-Powered Chat** | Google Gemini integration · context-aware, multi-turn conversations · persistent history per user · source-backed answers |
+| 🔍 **RAG Pipeline** | Local embeddings (zero per-query API cost) · semantic search · cosine-similarity retrieval with a relevance threshold · never guesses — says so when it doesn't know |
+| 🔐 **Authentication** | JWT-based auth · bcrypt password hashing · protected routes via middleware · role-based access (`student` / `admin`) |
+| 📚 **Knowledge Management** | Admin CRUD for knowledge base entries · automatic embedding on insert · MongoDB storage · bulk ingestion script with sample data included |
+| 🛡️ **Security** | Environment-variable secrets · CORS restricted to a configured origin · JWT verification on every protected route · passwords never stored in plaintext |
 
 ---
 
@@ -77,7 +76,70 @@ Ask things like:
 | 5 | Gemini generates a grounded response |
 | 6 | Answer and its sources are stored in MongoDB and returned to the client |
 
-![RAG pipeline architecture](./docs/images/architecture.svg)
+### Flow diagram
+
+```
+ ┌────────────┐
+ │  React UI   │
+ │ (chat page) │
+ └──────┬──────┘
+        │ 1. POST /api/chat  { message }
+        ▼
+ ┌───────────────────────┐
+ │   Express API           │
+ │   (JWT protected)       │
+ └───────────┬─────────────┘
+             │ 2. embed the question locally
+             ▼
+ ┌─────────────────────────────┐
+ │ Embedding service              │
+ │ @xenova/transformers (MiniLM)   │
+ └──────────────┬────────────────┘
+                │ question vector
+                ▼
+ ┌─────────────────────────────┐
+ │ Retrieval service                │
+ │ cosine similarity vs. every        │
+ │ KnowledgeChunk in MongoDB          │
+ └──────────────┬────────────────┘
+                │ 3. top-K relevant chunks (score ≥ threshold)
+                ▼
+ ┌─────────────────────────────┐
+ │ Gemini service                     │
+ │ prompt = context + question         │
+ │         + recent chat history        │
+ └──────────────┬────────────────┘
+                │ 4. grounded answer
+                ▼
+ ┌─────────────────────────────┐
+ │ MongoDB                            │
+ │ save ChatMessage (+ sources)        │
+ └──────────────┬────────────────┘
+                │ 5. answer + sources
+                ▼
+ ┌────────────┐
+ │  React UI   │  ← displayed with "Sources: ..." under the reply
+ └────────────┘
+```
+
+### Request lifecycle (sequence)
+
+```
+User        Frontend        Backend API      Embedding Model    MongoDB        Gemini
+ │  types      │                 │                   │              │              │
+ │────────────▶│                 │                   │              │              │
+ │             │── POST /chat ──▶│                   │              │              │
+ │             │                 │── embed(q) ──────▶│              │              │
+ │             │                 │◀── vector ─────────│              │              │
+ │             │                 │── find chunks ────────────────▶│              │
+ │             │                 │◀── chunks+embeddings ──────────│              │
+ │             │                 │  (cosine similarity in JS)     │              │
+ │             │                 │── prompt(context, q) ─────────────────────▶│
+ │             │                 │◀── generated answer ───────────────────────│
+ │             │                 │── save ChatMessage ────────────▶│              │
+ │             │◀── answer + sources ─│                   │              │              │
+ │◀── shown ───│                 │                   │              │              │
+```
 
 ---
 
@@ -96,6 +158,43 @@ Ask things like:
 
 ---
 
+## API Reference
+
+All routes are prefixed with `/api`. Protected routes require `Authorization: Bearer <token>`.
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | — | Health check |
+| `POST` | `/auth/register` | — | Create an account, returns a JWT |
+| `POST` | `/auth/login` | — | Log in, returns a JWT |
+| `POST` | `/chat` | ✅ | Send a message → retrieve context → call Gemini → save + return the answer |
+| `GET` | `/chat/sessions` | ✅ | List the current user's chat sessions |
+| `GET` | `/chat/sessions/:id` | ✅ | Get full message history for a session |
+| `POST` | `/knowledge` | ✅ admin | Add a knowledge chunk (auto-embedded) |
+| `GET` | `/knowledge` | ✅ admin | List all knowledge chunks |
+| `DELETE` | `/knowledge/:id` | ✅ admin | Remove a knowledge chunk |
+
+**Example request:**
+```bash
+curl -X POST http://localhost:5000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"message": "When does the Fall semester start?"}'
+```
+
+**Example response:**
+```json
+{
+  "sessionId": "66f1a2...",
+  "answer": "The Fall 2026 semester begins on August 24th and ends on December 12th.",
+  "sources": [
+    { "sourceTitle": "Academic Calendar 2026", "score": 0.81 }
+  ]
+}
+```
+
+---
+
 ## Database Schema
 
 | Collection | Purpose |
@@ -108,6 +207,29 @@ Ask things like:
 ---
 
 ## Authentication Flow
+
+```
+ Register / Login
+        │
+        ▼
+ bcrypt.compare(password, storedHash)
+        │
+        ├── fail ──▶ 401 Invalid email or password
+        │
+        ▼ success
+ jwt.sign({ id, email, role }) ──▶ token returned to client
+        │
+        ▼
+ Client stores token, sends it as
+ "Authorization: Bearer <token>" on every request
+        │
+        ▼
+ requireAuth middleware verifies token
+        │
+        ▼
+ requireAdmin middleware (knowledge routes only)
+ checks role === "admin"
+```
 
 1. User registers or logs in with email + password
 2. Password is checked against the stored hash with **bcrypt**
@@ -127,22 +249,22 @@ UniAssist matches on **meaning**, not exact wording. A student asking about *"ho
 
 ```
 uniassist/
-├── client/                        React frontend (Vite)
+├── client/                         React frontend (Vite)
 │   └── src/
-│       ├── api/                   Axios client
-│       ├── components/            ChatWindow, MessageBubble, ChatInput, TypingIndicator
+│       ├── api/                    Axios client
+│       ├── components/             ChatWindow, MessageBubble, ChatInput, TypingIndicator
 │       ├── context/                AuthContext
 │       └── pages/                  Login, ChatPage
 │
-├── server/                        Express backend
+├── server/                         Express backend
 │   ├── src/
 │   │   ├── controllers/            auth, chat, knowledge
 │   │   ├── middleware/             JWT auth
 │   │   ├── models/                 User, KnowledgeChunk, ChatSession, ChatMessage
 │   │   ├── routes/
 │   │   └── services/                embedding, retrieval, gemini
-│   ├── data/                       sample_knowledge.json
-│   └── scripts/                    ingestKnowledgeBase.js
+│   ├── data/                        sample_knowledge.json
+│   └── scripts/                     ingestKnowledgeBase.js
 │
 └── README.md
 ```
@@ -156,7 +278,7 @@ uniassist/
 - A MongoDB Atlas cluster (or local MongoDB)
 - A free Gemini API key → https://aistudio.google.com/app/apikey
 
-### Backend
+### 1 — Backend
 
 ```bash
 cd server
@@ -165,11 +287,16 @@ cp .env.example .env
 ```
 
 Fill in `server/.env`:
-```
-MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=any_long_random_string
-GEMINI_API_KEY=your_gemini_api_key
-```
+
+| Variable | Description |
+|---|---|
+| `PORT` | Port the API listens on (default `5000`) |
+| `MONGO_URI` | Your MongoDB connection string |
+| `JWT_SECRET` | Any long random string, used to sign tokens |
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `GEMINI_MODEL` | Defaults to `gemini-1.5-flash` |
+| `EMBEDDING_MODEL` | Defaults to `Xenova/all-MiniLM-L6-v2` |
+| `CLIENT_ORIGIN` | Frontend URL, for CORS |
 
 Run it:
 ```bash
@@ -184,22 +311,22 @@ Expected output:
 [server] UniAssist API listening on port 5000
 ```
 
-### Seed the knowledge base
+### 2 — Seed the knowledge base
 
 ```bash
 npm run ingest
 ```
 
-Embeds every entry in `server/data/sample_knowledge.json` locally and stores it in MongoDB. Swap in your own college's real content and re-run.
+Embeds every entry in `server/data/sample_knowledge.json` locally and stores it in MongoDB. Swap in your own college's real content and re-run whenever it changes.
 
-### Promote an admin
+### 3 — Promote an admin
 
-Register normally, then in MongoDB:
+Register normally through the app, then in MongoDB:
 ```js
 db.users.updateOne({ email: "you@example.com" }, { $set: { role: "admin" } })
 ```
 
-### Frontend
+### 4 — Frontend
 
 ```bash
 cd client
@@ -208,10 +335,12 @@ cp .env.example .env
 npm run dev
 ```
 
-Defaults to:
+`client/.env` defaults to:
 ```
 VITE_API_BASE_URL=http://localhost:5000/api
 ```
+
+Open the URL Vite prints (default `http://localhost:5173`), register an account, and start chatting.
 
 ---
 
@@ -254,7 +383,7 @@ Every answer includes which source document(s) it drew from.
 
 ---
 
-## Future Improvements
+## Roadmap
 
 - [ ] PDF upload → auto-chunk → auto-embed pipeline for admins
 - [ ] Streaming AI responses (token-by-token)
@@ -283,16 +412,18 @@ These are practical, in-demand skills for modern AI-powered web applications, ma
 
 ---
 
-## License
+## Troubleshooting
 
-MIT License.
+| Problem | Fix |
+|---|---|
+| `GEMINI_API_KEY is not set` | Check `server/.env` exists and restart the server after editing it |
+| `MONGO_URI is not set` | Same — check `.env` and restart |
+| Every answer says *"I don't have that information"* | The knowledge base is empty — run `npm run ingest` in `server/` |
+| CORS errors in the browser console | `CLIENT_ORIGIN` in the backend `.env` must exactly match your frontend's URL, including port |
+| First request feels slow | Expected — that's the embedding model warming up. Every request after that is fast |
 
 ---
 
-## Troubleshooting
 
-- **`GEMINI_API_KEY is not set`** → check `server/.env` exists and the server was restarted after editing it.
-- **`MONGO_URI is not set`** → same fix, check `.env` and restart.
-- **Every answer says "I don't have that information"** → the knowledge base is empty. Run `npm run ingest` in `server/`.
-- **CORS errors in the browser console** → `CLIENT_ORIGIN` in the backend `.env` must exactly match your frontend's URL (including port).
-- **First request feels slow** → expected — that's the embedding model warming up. Every request after that is fast.
+Built with React, Express, MongoDB, local embeddings, and Google Gemini.
+
